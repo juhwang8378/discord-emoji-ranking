@@ -7,6 +7,7 @@ class MyBot(commands.Bot):
     async def setup_hook(self):
         # This ensures the library loads before the bot logs in
         await self.load_extension("discord_emoji_ranking")
+        await self.tree.sync()
         print("Extension loaded successfully.")
 
 # 2. DEFINE INTENTS
