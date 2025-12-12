@@ -2,7 +2,7 @@ import datetime
 import logging
 import os
 from enum import Enum
-from typing import List, Optional, Dict
+from typing import Dict, List, Optional
 
 import discord
 from discord import app_commands
@@ -108,10 +108,9 @@ class EmojiRanking(commands.Cog, CogHelper):
         self._contains_bot = False
         self._user_ids: List[int] = []
 
-    @commands.hybrid_command(
+    @app_commands.command(
         name="emoji_ranking",
         description="Show usage ranking of custom emojis.",
-        with_app_command=True,
     )
     @app_commands.guild_only()
     @app_commands.describe(
@@ -131,7 +130,7 @@ class EmojiRanking(commands.Cog, CogHelper):
     )
     async def emoji_ranking(
         self,
-        ctx: commands.Context,
+        interaction: discord.Interaction,
         channel: Optional[str] = None,
         before: Optional[str] = None,
         after: Optional[str] = None,
@@ -140,33 +139,49 @@ class EmojiRanking(commands.Cog, CogHelper):
         bot: Optional[bool] = None,
         user: Optional[str] = None,
     ):
-        # Preserve legacy text command usage (key=value pairs) while enabling slash options.
-        if ctx.interaction is None and ctx.message and ctx.prefix:
+        ctx = await commands.Context.from_interaction(interaction)
+
+        if ctx.message and ctx.prefix:
             raw_content = ctx.message.content[len(ctx.prefix) :].lstrip()
             invoked = ctx.invoked_with or ""
             remaining = raw_content[len(invoked) :].strip()
             if remaining:
-                await self.execute(ctx, tuple(remaining.split()))
+                args = self._parse_legacy_args(tuple(remaining.split()))
+                await self._run_ranking(ctx, args)
                 return
 
-        arg_parts: List[str] = []
+        args: Dict[str, str] = {}
 
-        def add_arg(key: str, value):
+        def set_arg(key: str, value):
             if value is None or value == "":
                 return
-            arg_parts.append(f"{key}={value}")
+            args[key] = str(value)
 
-        add_arg("channel", channel)
-        add_arg("before", before)
-        add_arg("after", after)
-        add_arg("order", order)
+        set_arg("channel", channel)
+        set_arg("before", before)
+        set_arg("after", after)
+        set_arg("order", order)
         if rank is not None:
-            add_arg("rank", rank)
+            set_arg("rank", rank)
         if bot is not None:
-            add_arg("bot", bot)
-        add_arg("user", user)
+            set_arg("bot", bot)
+        set_arg("user", user)
 
-        await self.execute(ctx, tuple(arg_parts))
+        await self._run_ranking(ctx, args)
+
+    def _parse_legacy_args(self, raw_args: tuple) -> Dict[str, str]:
+        parsed: Dict[str, str] = {}
+        for arg in raw_args:
+            if "=" not in arg:
+                continue
+            key, _, value = arg.partition("=")
+            if key:
+                parsed[key] = value
+        return parsed
+
+    async def _run_ranking(self, ctx: commands.Context, args: Dict[str, str]):
+        self._parse_args(ctx, args)
+        await self._execute(ctx)
 
     def _parse_args(self, ctx: commands.Context, args: Dict[str, str]):
         self._channel_ids = get_list(args, "channel", ",", lambda value: int(value), [])
