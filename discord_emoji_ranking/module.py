@@ -5,7 +5,8 @@ from enum import Enum
 from typing import List, Optional, Dict
 
 import discord
-from discord.ext.commands import Context, Bot, Cog, command
+from discord import app_commands
+from discord.ext import commands
 from discord_ext_commands_coghelper import CogHelper
 from discord_ext_commands_coghelper.utils import (
     Constant,
@@ -96,8 +97,8 @@ def _get_rank_str(rank: int) -> str:
     return f"{rank}th"
 
 
-class EmojiRanking(Cog, CogHelper):
-    def __init__(self, bot: Bot):
+class EmojiRanking(commands.Cog, CogHelper):
+    def __init__(self, bot: commands.Bot):
         CogHelper.__init__(self, bot)
         self._channel_ids: List[int]
         self._before: Optional[datetime.datetime] = None
@@ -107,11 +108,67 @@ class EmojiRanking(Cog, CogHelper):
         self._contains_bot = False
         self._user_ids: List[int] = []
 
-    @command()
-    async def emoji_ranking(self, ctx, *args):
-        await self.execute(ctx, args)
+    @commands.hybrid_command(
+        name="emoji_ranking",
+        description="Show usage ranking of custom emojis.",
+        with_app_command=True,
+    )
+    @app_commands.guild_only()
+    @app_commands.describe(
+        channel="Channel IDs or mentions separated by ','",
+        before="Count messages before this date (YYYY/MM/DD or YYYY-MM-DD)",
+        after="Count messages after this date",
+        order="Sort order (ascending or descending)",
+        rank="Number of rankings to display (1-25)",
+        bot="Include bot messages and reactions",
+        user="User IDs or mentions separated by ','",
+    )
+    @app_commands.choices(
+        order=[
+            app_commands.Choice(name="Descending", value="descending"),
+            app_commands.Choice(name="Ascending", value="ascending"),
+        ]
+    )
+    async def emoji_ranking(
+        self,
+        ctx: commands.Context,
+        channel: Optional[str] = None,
+        before: Optional[str] = None,
+        after: Optional[str] = None,
+        order: Optional[str] = None,
+        rank: Optional[int] = None,
+        bot: Optional[bool] = None,
+        user: Optional[str] = None,
+    ):
+        # Preserve legacy text command usage (key=value pairs) while enabling slash options.
+        if ctx.interaction is None and ctx.message and ctx.prefix:
+            raw_content = ctx.message.content[len(ctx.prefix) :].lstrip()
+            invoked = ctx.invoked_with or ""
+            remaining = raw_content[len(invoked) :].strip()
+            if remaining:
+                await self.execute(ctx, tuple(remaining.split()))
+                return
 
-    def _parse_args(self, ctx: Context, args: Dict[str, str]):
+        arg_parts: List[str] = []
+
+        def add_arg(key: str, value):
+            if value is None or value == "":
+                return
+            arg_parts.append(f"{key}={value}")
+
+        add_arg("channel", channel)
+        add_arg("before", before)
+        add_arg("after", after)
+        add_arg("order", order)
+        if rank is not None:
+            add_arg("rank", rank)
+        if bot is not None:
+            add_arg("bot", bot)
+        add_arg("user", user)
+
+        await self.execute(ctx, tuple(arg_parts))
+
+    def _parse_args(self, ctx: commands.Context, args: Dict[str, str]):
         self._channel_ids = get_list(args, "channel", ",", lambda value: int(value), [])
         self._before, self._after = get_before_after_fmts(
             ctx, args, *_Constant.DATE_FORMATS, tz=_Constant.TZ
@@ -123,7 +180,11 @@ class EmojiRanking(Cog, CogHelper):
             args, "user", ",", lambda value: int(value.strip("<@!>")), []
         )
 
-    async def _execute(self, ctx: Context):
+    async def _execute(self, ctx: commands.Context):
+        if hasattr(ctx, "interaction") and ctx.interaction:
+            if not ctx.interaction.response.is_done():
+                await ctx.interaction.response.defer()
+
         before = to_utc_naive(self._before)
         after = to_utc_naive(self._after)
 
@@ -234,5 +295,5 @@ class EmojiRanking(Cog, CogHelper):
         return sorted_counters
 
 
-def setup(bot: Bot):
+def setup(bot: commands.Bot):
     return bot.add_cog(EmojiRanking(bot))

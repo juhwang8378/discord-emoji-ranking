@@ -24,6 +24,12 @@ DISCORD_BOT_TOKEN='your Discord BOT project token.'
 
 bot = commands.Bot(command_prefix="/")
 bot.load_extension("discord_emoji_ranking")
+
+@bot.event
+async def on_ready():
+    # Register slash commands with Discord once the bot is ready.
+    await bot.tree.sync()
+
 bot.run(DISCORD_BOT_TOKEN)
 ```
 
@@ -39,6 +45,8 @@ export DISCORD_EMOJI_RANKING_TIMEZONE_OFFSET=9
 ```
 /emoji_ranking channel={CHANNEL_ID...} before={YYYY/mm/dd} after={YYYY/mm/dd} order={ascending|descending} rank={1-25} bot={True|False} user={USER_ID...}
 ```
+The command is also available as a slash command; pick the options interactively from Discord's UI.
+
 ### arguments
 
 | param   | description                                                             | default             | required |
